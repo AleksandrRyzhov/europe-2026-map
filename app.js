@@ -44,7 +44,10 @@
     if (!r.distance_km) return '';
     const h = Math.floor((r.duration_min||0)/60), m = (r.duration_min||0)%60;
     const t = h ? `${h} ч ${m} мин` : `${m} мин`;
-    return `<div class="dist">≈ ${r.distance_km} км · ${t}</div>`;
+    let html = `<div class="dist">🚗 руль ≈ ${r.distance_km} км · ${t}</div>`;
+    if (r.distance_note) html += `<div class="notes" style="margin-top:6px;color:#9a3412">${esc(r.distance_note)}</div>`;
+    if (r.stops_note) html += `<div class="notes" style="margin-top:4px">${esc(r.stops_note)}</div>`;
+    return html;
   }
 
   $('#hotels').innerHTML = D.hotels.map(h => `
@@ -83,6 +86,20 @@
       <div class="notes">${esc(p.notes)}</div>
       <a class="btn secondary" href="${mapsSearch(p.name)}" target="_blank" rel="noopener">Открыть точку</a>
     </article>`).join('');
+
+
+  const stopsEl = $('#stops');
+  if (stopsEl) {
+    const rs = D.rest_stops || [];
+    stopsEl.innerHTML = `<div class="tip">Крупные заправки и перекусы по ходу маршрута. Точки также на карте (оранжевые квадраты).</div>` + rs.map(s => `
+      <article class="card">
+        <div class="meta">${esc(s.day)} · ${esc(s.kind)}</div>
+        <h3>${esc(s.name)}</h3>
+        <div class="notes">${esc(s.address)}</div>
+        <div class="notes" style="margin-top:6px">${esc(s.notes)}</div>
+        <a class="btn" href="${esc(s.maps)}" target="_blank" rel="noopener">Открыть на карте</a>
+      </article>`).join('');
+  }
 
   const S = D.services;
   function linkBtn(url, label='Открыть'){
@@ -167,6 +184,14 @@
         .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.category)} · ${esc(p.date)}<br><small>${esc(p.notes)}</small>`);
       bounds.push([p.lat,p.lon]);
     });
+        (D.rest_stops||[]).forEach(p => {
+      if (p.lat == null) return;
+      const ic = L.divIcon({className:'', html:'<div style="width:11px;height:11px;background:#f59e0b;border:2px solid #fff;border-radius:2px;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize:[11,11], iconAnchor:[5,5]});
+      L.marker([p.lat,p.lon], {icon:ic}).addTo(map)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.kind)} · ${esc(p.day)}<br><small>${esc(p.notes)}</small>`);
+      bounds.push([p.lat,p.lon]);
+    });
+
     D.pois.forEach(p => {
       L.marker([p.lat,p.lon], {icon:poiIcon}).addTo(map)
         .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.date)} · ${esc(p.category)} · ${esc(p.priority)}<br><small>${esc(p.notes)}</small>`);
@@ -197,8 +222,9 @@
         const pts = [];
         D.hotels.forEach(h => { if (h.lat!=null) pts.push([h.lat,h.lon]); });
         (D.landmarks||[]).forEach(h => pts.push([h.lat,h.lon]));
+        (D.rest_stops||[]).forEach(h => { if (h.lat!=null) pts.push([h.lat,h.lon]); });
         D.routes.forEach(r => (r.coords||[]).forEach(c => pts.push(c)));
-        const cache = await caches.open('europe2026-v3');
+        const cache = await caches.open('europe2026-v5');
         for (const z of zooms) {
           for (const [lat,lon] of pts) {
             const tile = latLonToTile(lat, lon, z);
