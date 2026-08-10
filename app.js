@@ -69,7 +69,7 @@
       : `<div class="notes" style="margin-top:6px;color:#64748b">Без фиксированных точек — быстрый маршрут.</div>`;
     const note = r.note ? `<div class="warn" style="margin-top:8px">${esc(r.note)}</div>` : '';
     return `<article class="card">
-      <div class="meta">${esc(r.date)} · ${esc(r.type || 'маршрут')}</div>
+      <div class="meta">${esc(r.date)} · ${esc(r.route_priority === 'fastest' ? '⚡ самый быстрый' : (r.type || 'маршрут'))}</div>
       <h3>${esc(r.name)}</h3>
       ${distLabel(r)}
       <div class="notes" style="margin-top:6px"><b>Старт:</b> ${esc(r.origin)}<br><b>Финиш:</b> ${esc(r.destination)}</div>
