@@ -1,5 +1,4 @@
-
-const CACHE = 'europe2026-v7';
+const CACHE = 'europe2026-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -20,15 +19,20 @@ const ASSETS = [
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
+
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
+  );
 });
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // cache OSM / Carto tiles as browsed
-  const isTile = /tile\.openstreetmap\.org|basemaps\.cartocdn\.com|tile\.openstreetmap\.fr/.test(url.href);
+  const isTile = /basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.href);
+  const isShell = /(?:index\.html|data\.js|app\.js|styles\.css|sw\.js)$/.test(url.pathname) || url.pathname.endsWith('/europe-2026-map/') || url.pathname.endsWith('/europe-2026-map');
+
   if (isTile) {
     e.respondWith(
       caches.open(CACHE).then(async (cache) => {
@@ -45,11 +49,29 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+
+  // Network-first for app shell so tabs/data updates are not stuck in old cache
+  if (isShell) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(req, copy));
-      return res;
-    }).catch(() => caches.match('./index.html')))
+    caches.match(req).then((hit) =>
+      hit ||
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+        return res;
+      })
+    )
   );
 });

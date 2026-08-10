@@ -15,18 +15,19 @@
   setOnline();
 
   let map, mapReady = false;
+  function showTab(id) {
+    $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+    $$('.panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('tab-' + id);
+    if (panel) panel.classList.add('active');
+    if (id === 'map') {
+      ensureMap();
+      setTimeout(() => map && map.invalidateSize(), 80);
+    }
+    if (id === 'stops') renderStops();
+  }
   $$('.tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      $$('.tab').forEach(b => b.classList.remove('active'));
-      $$('.panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      const id = btn.dataset.tab;
-      document.getElementById('tab-' + id).classList.add('active');
-      if (id === 'map') {
-        ensureMap();
-        setTimeout(() => map && map.invalidateSize(), 80);
-      }
-    });
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
   });
 
   function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -88,10 +89,17 @@
     </article>`).join('');
 
 
-  const stopsEl = $('#stops');
-  if (stopsEl) {
-    const rs = D.rest_stops || [];
-    stopsEl.innerHTML = `<div class="tip">Крупные заправки и перекусы по ходу маршрута. Точки также на карте (оранжевые квадраты).</div>` + rs.map(s => `
+  function renderStops() {
+    const stopsEl = document.getElementById('stops');
+    if (!stopsEl) return;
+    const rs = Array.isArray(D.rest_stops) ? D.rest_stops : [];
+    if (!rs.length) {
+      stopsEl.innerHTML = '<div class="warn">Список остановок не загрузился. Обновите страницу с интернетом (потяните вниз / закройте вкладку и откройте снова).</div>';
+      return;
+    }
+    stopsEl.innerHTML =
+      `<div class="tip"><b>${rs.length} остановок</b> по маршруту: заправки и перекусы. На карте — оранжевые квадраты.</div>` +
+      rs.map(s => `
       <article class="card">
         <div class="meta">${esc(s.day)} · ${esc(s.kind)}</div>
         <h3>${esc(s.name)}</h3>
@@ -100,6 +108,7 @@
         <a class="btn" href="${esc(s.maps)}" target="_blank" rel="noopener">Открыть на карте</a>
       </article>`).join('');
   }
+  renderStops();
 
   const S = D.services;
   function linkBtn(url, label='Открыть'){
@@ -224,7 +233,7 @@
         (D.landmarks||[]).forEach(h => pts.push([h.lat,h.lon]));
         (D.rest_stops||[]).forEach(h => { if (h.lat!=null) pts.push([h.lat,h.lon]); });
         D.routes.forEach(r => (r.coords||[]).forEach(c => pts.push(c)));
-        const cache = await caches.open('europe2026-v5');
+        const cache = await caches.open('europe2026-v8');
         for (const z of zooms) {
           for (const [lat,lon] of pts) {
             const tile = latLonToTile(lat, lon, z);
