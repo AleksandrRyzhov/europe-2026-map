@@ -25,6 +25,7 @@
       setTimeout(() => map && map.invalidateSize(), 80);
     }
     if (id === 'stops') renderStops();
+    if (id === 'phrases') renderPhrases();
   }
   $$('.tab').forEach(btn => {
     btn.addEventListener('click', () => showTab(btn.dataset.tab));
@@ -109,6 +110,38 @@
       </article>`).join('');
   }
   renderStops();
+
+  function renderPhrases() {
+    const el = document.getElementById('phrases');
+    if (!el) return;
+    const groups = Array.isArray(D.phrases) ? D.phrases : [];
+    if (!groups.length) {
+      el.innerHTML = '<div class="warn">Фразы не загрузились. Обновите страницу с интернетом.</div>';
+      return;
+    }
+    el.innerHTML = '<div class="tip">Короткий разговорник EN → RU. Тап по фразе — скопировать английский.</div>' + groups.map(g => `
+      <div class="svc-group">
+        <div class="cat-title">${esc(g.cat)}</div>
+        <article class="card" style="padding-top:4px;padding-bottom:4px">
+          ${(g.items||[]).map(it => `
+            <div class="phrase" data-copy="${esc(it.en)}">
+              <div class="phrase-en">${esc(it.en)}</div>
+              <div class="phrase-ru">${esc(it.ru)}</div>
+            </div>`).join('')}
+        </article>
+      </div>`).join('');
+    el.querySelectorAll('.phrase').forEach(node => {
+      node.addEventListener('click', async () => {
+        const text = node.getAttribute('data-copy') || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          node.style.background = '#dcfce7';
+          setTimeout(() => { node.style.background = ''; }, 500);
+        } catch (_) {}
+      });
+    });
+  }
+  renderPhrases();
 
   const S = D.services;
   function linkBtn(url, label='Открыть'){
@@ -233,7 +266,7 @@
         (D.landmarks||[]).forEach(h => pts.push([h.lat,h.lon]));
         (D.rest_stops||[]).forEach(h => { if (h.lat!=null) pts.push([h.lat,h.lon]); });
         D.routes.forEach(r => (r.coords||[]).forEach(c => pts.push(c)));
-        const cache = await caches.open('europe2026-v8');
+        const cache = await caches.open('europe2026-v9');
         for (const z of zooms) {
           for (const [lat,lon] of pts) {
             const tile = latLonToTile(lat, lon, z);
