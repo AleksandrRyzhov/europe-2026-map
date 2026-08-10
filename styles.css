@@ -37,3 +37,8 @@ html,body{height:100%;margin:0;font:15px/1.4 -apple-system,BlinkMacSystemFont,Se
 .map-float{position:absolute;z-index:1000;left:10px;right:10px;top:10px;background:rgba(15,23,42,.88);color:#fff;border-radius:12px;padding:8px 10px;font-size:12px}
 .list-empty{color:var(--muted);padding:20px;text-align:center}
 a.link{color:#0369a1;font-weight:600;word-break:break-word}
+
+.dist{display:inline-block;margin-top:4px;font-size:12px;font-weight:700;color:#0f172a;background:#e2e8f0;border-radius:8px;padding:3px 8px}
+.svc-group{margin-bottom:14px}
+.svc-group h2{font-size:14px;margin:0 0 8px;color:#0f172a}
+.phone{font-size:18px;font-weight:800;letter-spacing:.2px}

@@ -14,7 +14,6 @@
   window.addEventListener('offline', setOnline);
   setOnline();
 
-  // tabs
   let map, mapReady = false;
   $$('.tab').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -22,8 +21,7 @@
       $$('.panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       const id = btn.dataset.tab;
-      const panel = document.getElementById('tab-' + id);
-      panel.classList.add('active');
+      document.getElementById('tab-' + id).classList.add('active');
       if (id === 'map') {
         ensureMap();
         setTimeout(() => map && map.invalidateSize(), 80);
@@ -42,40 +40,43 @@
   function mapsSearch(address){
     return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address);
   }
+  function distLabel(r){
+    if (!r.distance_km) return '';
+    const h = Math.floor((r.duration_min||0)/60), m = (r.duration_min||0)%60;
+    const t = h ? `${h} ч ${m} мин` : `${m} мин`;
+    return `<div class="dist">≈ ${r.distance_km} км · ${t}</div>`;
+  }
 
-  // hotels
-  const hotelsEl = $('#hotels');
-  hotelsEl.innerHTML = D.hotels.map(h => `
+  $('#hotels').innerHTML = D.hotels.map(h => `
     <article class="card">
-      <div class="meta">${esc(h.date)}</div>
+      <div class="meta">${esc(h.date||'')}</div>
       <h3>${esc(h.name)}</h3>
       <div class="notes"><b>Адрес:</b> ${esc(h.address)}</div>
       <div class="notes" style="margin-top:6px"><b>Парковка / заметки:</b> ${esc(h.notes)}</div>
+      ${h.phone ? `<div class="notes" style="margin-top:8px"><a class="phone" href="tel:${esc(h.phone)}">${esc(h.phone)}</a></div>` : ''}
       <div class="row">
-        <a class="btn" href="${mapsSearch(h.address)}" target="_blank" rel="noopener">Открыть адрес</a>
+        <a class="btn" href="${h.maps || mapsSearch(h.address)}" target="_blank" rel="noopener">Открыть адрес</a>
+        ${h.phone ? `<a class="btn secondary" href="tel:${esc(h.phone)}">Позвонить</a>` : ''}
       </div>
     </article>`).join('');
 
-  // routes
-  const routesEl = $('#routes');
-  routesEl.innerHTML = D.routes.map(r => {
+  $('#routes').innerHTML = D.routes.map(r => {
     const via = r.waypoints && r.waypoints.length
       ? `<div class="notes" style="margin-top:6px"><b>Через:</b><br>${r.waypoints.map(esc).join('<br>')}</div>`
-      : `<div class="notes" style="margin-top:6px;color:#64748b">Без фиксированных точек — быстрый маршрут Google.</div>`;
+      : `<div class="notes" style="margin-top:6px;color:#64748b">Без фиксированных точек — быстрый маршрут.</div>`;
     const note = r.note ? `<div class="warn" style="margin-top:8px">${esc(r.note)}</div>` : '';
     return `<article class="card">
       <div class="meta">${esc(r.date)} · ${esc(r.type || 'маршрут')}</div>
       <h3>${esc(r.name)}</h3>
-      <div class="notes"><b>Старт:</b> ${esc(r.origin)}<br><b>Финиш:</b> ${esc(r.destination)}</div>
+      ${distLabel(r)}
+      <div class="notes" style="margin-top:6px"><b>Старт:</b> ${esc(r.origin)}<br><b>Финиш:</b> ${esc(r.destination)}</div>
       ${via}${note}
       <a class="btn" href="${esc(r.link)}" target="_blank" rel="noopener">Навигация в Google Maps</a>
     </article>`;
   }).join('');
 
-  // pois
-  const poisEl = $('#pois');
   const sorted = [...D.pois].sort((a,b) => String(a.date).localeCompare(String(b.date),'ru'));
-  poisEl.innerHTML = sorted.map(p => `
+  $('#pois').innerHTML = sorted.map(p => `
     <article class="card">
       <div class="meta">${esc(p.date)} · ${esc(p.category)} ${badge(p.priority)}</div>
       <h3>${esc(p.name)}</h3>
@@ -83,14 +84,63 @@
       <a class="btn secondary" href="${mapsSearch(p.name)}" target="_blank" rel="noopener">Открыть точку</a>
     </article>`).join('');
 
-  // info
-  const infoEl = $('#info');
-  infoEl.innerHTML = `
+  const S = D.services;
+  function linkBtn(url, label='Открыть'){
+    if (!url) return '';
+    return `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>`;
+  }
+  $('#services').innerHTML = `
+    <div class="svc-group"><h2>Контакты</h2>
+      ${S.contacts.map(c => `<article class="card">
+        <h3>${esc(c.title)}</h3>
+        <div class="phone" style="margin:6px 0"><a href="${esc(c.href)}">${esc(c.detail)}</a></div>
+        <div class="notes">${esc(c.note)}</div>
+        <a class="btn secondary" href="${esc(c.href)}">Позвонить</a>
+      </article>`).join('')}
+    </div>
+    <div class="svc-group"><h2>Виньетки и дороги</h2>
+      ${S.vignettes.map(v => `<article class="card">
+        <div class="meta">${esc(v.country)}</div>
+        <h3>${esc(v.what)}</h3>
+        <div class="notes">${esc(v.note)}</div>
+        ${linkBtn(v.where, 'Купить / сайт')}
+      </article>`).join('')}
+    </div>
+    <div class="svc-group"><h2>Перевалы открыты?</h2>
+      ${S.passes.map(p => `<article class="card">
+        <h3>${esc(p.title)}</h3>
+        <div class="notes">${esc(p.note)}</div>
+        ${linkBtn(p.url)}
+      </article>`).join('')}
+    </div>
+    <div class="svc-group"><h2>Погода — Швейцария / Альпы</h2>
+      ${S.weather.map(w => `<article class="card">
+        <h3>${esc(w.title)}</h3>
+        <div class="notes">${esc(w.note)}</div>
+        ${linkBtn(w.url)}
+      </article>`).join('')}
+    </div>
+    <div class="svc-group"><h2>Граница BY ↔ PL</h2>
+      ${S.border.map(b => `<article class="card">
+        <h3>${esc(b.title)}</h3>
+        <div class="notes">${esc(b.note)}</div>
+        ${linkBtn(b.url)}
+      </article>`).join('')}
+    </div>
+    <div class="svc-group"><h2>Ещё полезное</h2>
+      ${S.other.map(o => `<article class="card">
+        <h3>${esc(o.title)}</h3>
+        <div class="notes">${esc(o.note)}</div>
+        ${linkBtn(o.url)}
+      </article>`).join('')}
+    </div>`;
+
+  $('#info').innerHTML = `
     <div class="warn"><b>Важно</b><ul style="margin:6px 0 0 18px;padding:0">${D.warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>
     ${D.tips.map(t=>`<div class="tip">${esc(t)}</div>`).join('')}
     <article class="card">
       <h3>Офлайн</h3>
-      <div class="notes">Жильё, маршруты и точки доступны без сети. Подложка карты — из кэша после просмотра онлайн. Навигация turn-by-turn в Google Maps требует сеть или офлайн-карты Google.</div>
+      <div class="notes">Жильё, маршруты, точки и служба-контакты доступны без сети. Подложка карты — из кэша после просмотра онлайн.</div>
       <button class="btn" id="prefetchBtn" type="button">Кэшировать карту маршрута</button>
       <div class="meta" id="prefetchStatus" style="margin-top:8px"></div>
     </article>`;
@@ -98,17 +148,23 @@
   function ensureMap(){
     if (mapReady) return;
     mapReady = true;
-    map = L.map('map', {zoomControl:true}).setView([47.0, 10.5], 6);
+    map = L.map('map', {zoomControl:true}).setView([50.5, 15], 5);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 18,
-      attribution: '&copy; OSM &copy; CARTO'
+      maxZoom: 18, attribution: '&copy; OSM &copy; CARTO'
     }).addTo(map);
     const hotelIcon = L.divIcon({className:'', html:'<div style="width:14px;height:14px;border-radius:50%;background:#16a34a;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize:[14,14], iconAnchor:[7,7]});
     const poiIcon = L.divIcon({className:'', html:'<div style="width:12px;height:12px;border-radius:50%;background:#7c3aed;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize:[12,12], iconAnchor:[6,6]});
+    const markIcon = L.divIcon({className:'', html:'<div style="width:12px;height:12px;border-radius:50%;background:#0ea5e9;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize:[12,12], iconAnchor:[6,6]});
     const bounds = [];
     D.hotels.forEach(p => {
+      if (p.lat == null) return;
       L.marker([p.lat,p.lon], {icon:hotelIcon}).addTo(map)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.date)}<br>${esc(p.address)}<br><small>${esc(p.notes)}</small>`);
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.date||'')}<br>${esc(p.address)}<br><small>${esc(p.notes)}</small>`);
+      bounds.push([p.lat,p.lon]);
+    });
+    (D.landmarks||[]).forEach(p => {
+      L.marker([p.lat,p.lon], {icon:markIcon}).addTo(map)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.category)} · ${esc(p.date)}<br><small>${esc(p.notes)}</small>`);
       bounds.push([p.lat,p.lon]);
     });
     D.pois.forEach(p => {
@@ -119,15 +175,15 @@
     D.routes.forEach(r => {
       if (!r.coords || r.coords.length < 2) return;
       const line = L.polyline(r.coords, {color:'#ea580c', weight:4, opacity:.85}).addTo(map);
+      const dist = r.distance_km ? `<br>≈ ${r.distance_km} км` : '';
       const link = r.link ? `<br><a href="${r.link}">Google Maps</a>` : '';
-      line.bindPopup(`<b>${esc(r.name)}</b>${link}`);
+      line.bindPopup(`<b>${esc(r.name)}</b>${dist}${link}`);
       r.coords.forEach(c => bounds.push(c));
     });
     if (bounds.length) map.fitBounds(bounds, {padding:[36,36]});
     setTimeout(() => map.invalidateSize(), 200);
   }
 
-  // prefetch tiles along route at zoom 7-8
   document.addEventListener('click', async (e) => {
     if (e.target && e.target.id === 'prefetchBtn') {
       const st = $('#prefetchStatus');
@@ -139,9 +195,10 @@
         const zooms = [5,6,7];
         let n = 0;
         const pts = [];
-        D.hotels.forEach(h => pts.push([h.lat,h.lon]));
+        D.hotels.forEach(h => { if (h.lat!=null) pts.push([h.lat,h.lon]); });
+        (D.landmarks||[]).forEach(h => pts.push([h.lat,h.lon]));
         D.routes.forEach(r => (r.coords||[]).forEach(c => pts.push(c)));
-        const cache = await caches.open('europe2026-v2');
+        const cache = await caches.open('europe2026-v3');
         for (const z of zooms) {
           for (const [lat,lon] of pts) {
             const tile = latLonToTile(lat, lon, z);
@@ -155,7 +212,7 @@
             }
           }
         }
-        st.textContent = `Готово: сохранено ~${n} плиток. Можно пробовать офлайн.`;
+        st.textContent = `Готово: сохранено ~${n} плиток.`;
       } catch (err) {
         st.textContent = 'Ошибка кэша: ' + err.message;
       }
@@ -174,6 +231,5 @@
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
-  // start on map
   ensureMap();
 })();
