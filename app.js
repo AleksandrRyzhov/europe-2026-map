@@ -25,6 +25,7 @@
       setTimeout(() => map && map.invalidateSize(), 80);
     }
     if (id === 'stops') renderStops();
+    if (id === 'docs') renderDocs();
     if (id === 'phrases') renderPhrases();
   }
   $$('.tab').forEach(btn => {
@@ -142,6 +143,25 @@
     });
   }
   renderPhrases();
+
+  function renderDocs() {
+    const el = document.getElementById('docs');
+    if (!el) return;
+    const list = Array.isArray(D.documents) ? D.documents : [];
+    const priv = D.documents_privacy || '';
+    el.innerHTML = (priv ? `<div class="tip">${esc(priv)}</div>` : '') +
+      `<div class="warn"><b>Важно:</b> это только OC (гражданская ответственность перед третьими лицами). Каско/своё авто не покрывает. Возите PDF polisa + certyfikat offline.</div>` +
+      list.map(d => `
+        <article class="card">
+          <h3>${esc(d.title)}</h3>
+          <div class="notes">${esc(d.note)}</div>
+          <a class="btn" href="../${esc(d.file)}" target="_blank" rel="noopener">Открыть PDF</a>
+        </article>`).join('') +
+      `<article class="card"><h3>Что сверяли</h3>
+        <div class="notes">ФИО, адрес Минск, номер 5554AI8, VIN LB37622Z0SX644943, GEELY COOLRAY, бензин 1499/128kW, период 15.08–13.09.2026. Швейцария: в территорию Warta OC Graniczne входит (EOG + CH).</div>
+      </article>`;
+  }
+  renderDocs();
 
   const S = D.services;
   function linkBtn(url, label='Открыть'){
