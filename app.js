@@ -144,11 +144,11 @@
   }
   renderPhrases();
 
-const DOCS_SESSION_KEY = 'e2026_docs_unlock_v1';
+const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v2';
   let docsUnlockedPack = null;
 
   function docsIsUnlocked() {
-    return !!docsUnlockedPack || sessionStorage.getItem(DOCS_SESSION_KEY) === '1';
+    return !!docsUnlockedPack || localStorage.getItem(DOCS_STORAGE_KEY) === '1';
   }
 
   function b64ToBytes(b64) {
@@ -181,24 +181,24 @@ const DOCS_SESSION_KEY = 'e2026_docs_unlock_v1';
     );
     const pack = JSON.parse(new TextDecoder().decode(plain));
     docsUnlockedPack = pack;
-    sessionStorage.setItem(DOCS_SESSION_KEY, '1');
+    localStorage.setItem(DOCS_STORAGE_KEY, '1');
     // keep decrypted pack in memory for this page session only
-    sessionStorage.setItem(DOCS_SESSION_KEY + '_pack', JSON.stringify(pack));
+    localStorage.setItem(DOCS_STORAGE_KEY + '_pack', JSON.stringify(pack));
     return pack;
   }
 
   function lockDocs() {
     docsUnlockedPack = null;
-    sessionStorage.removeItem(DOCS_SESSION_KEY);
-    sessionStorage.removeItem(DOCS_SESSION_KEY + '_pack');
+    localStorage.removeItem(DOCS_STORAGE_KEY);
+    localStorage.removeItem(DOCS_STORAGE_KEY + '_pack');
     renderDocs();
   }
 
   function getUnlockedPack() {
     if (docsUnlockedPack) return docsUnlockedPack;
     try {
-      const raw = sessionStorage.getItem(DOCS_SESSION_KEY + '_pack');
-      if (raw && sessionStorage.getItem(DOCS_SESSION_KEY) === '1') {
+      const raw = localStorage.getItem(DOCS_STORAGE_KEY + '_pack');
+      if (raw && localStorage.getItem(DOCS_STORAGE_KEY) === '1') {
         docsUnlockedPack = JSON.parse(raw);
         return docsUnlockedPack;
       }
@@ -217,7 +217,7 @@ const DOCS_SESSION_KEY = 'e2026_docs_unlock_v1';
           <button class="btn" type="submit">Показать документы</button>
         </form>
         ${errMsg ? `<div class="docs-lock-err">${esc(errMsg)}</div>` : ''}
-        <div class="tip" style="margin-top:10px">Подсказка: пароль знает только тот, кому вы его сказали. Файлы в приложении зашифрованы в данных вкладки.</div>
+        <div class="tip" style="margin-top:10px">После ввода пароль запоминается на этом телефоне, пока не нажмёте «Скрыть / заблокировать».</div>
       </article>`;
     const form = el.querySelector('#docs-unlock-form');
     form.addEventListener('submit', async (e) => {
