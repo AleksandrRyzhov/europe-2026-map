@@ -144,7 +144,7 @@
   }
   renderPhrases();
 
-const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v9';
+const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v10';
   let docsUnlockedPack = null;
 
   function b64ToBytes(b64) {
