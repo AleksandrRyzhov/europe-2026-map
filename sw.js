@@ -1,4 +1,4 @@
-const CACHE = 'europe2026-v22';
+const CACHE = 'europe2026-v24';
 const ASSETS = [
   './',
   './index.html',
@@ -32,48 +32,25 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  const isTile = /basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.href);
-  const isShell = /(?:index\.html|data\.js|app\.js|styles\.css|sw\.js)$/.test(url.pathname) || url.pathname.endsWith('/europe-2026-map/') || url.pathname.endsWith('/europe-2026-map');
-
-  if (isTile) {
-    e.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        const hit = await cache.match(req);
-        if (hit) return hit;
-        try {
-          const res = await fetch(req);
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        } catch (err) {
-          return hit || Response.error();
-        }
-      })
-    );
-    return;
-  }
-
-  // Network-first for app shell so tabs/data updates are not stuck in old cache
+  if (url.origin !== location.origin) return;
+  const path = url.pathname;
+  const isShell = /\.(?:html|js|css|webmanifest)$/.test(path) || path.endsWith('/') || path.endsWith('/europe-2026-map');
   if (isShell) {
+    // network-first-shell
     e.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
-    );
-    return;
-  }
-
-  e.respondWith(
-    caches.match(req).then((hit) =>
-      hit ||
       fetch(req).then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
-      })
-    )
+      }).catch(() => caches.match(req).then((r) => r || caches.match('./index.html')))
+    );
+    return;
+  }
+  e.respondWith(
+    caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy));
+      return res;
+    }))
   );
 });

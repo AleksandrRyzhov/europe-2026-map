@@ -235,19 +235,38 @@ let docsViewerUrl = null;
     }
   }
 
+function appBaseUrl() {
+    // works for /europe-2026-map/ and local file/http roots
+    try { return new URL('./', location.href).href; } catch (_) { return './'; }
+  }
+
   function loadPdfJs() {
-    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (window.pdfjsLib && typeof window.pdfjsLib.getDocument === 'function') {
+      return Promise.resolve(window.pdfjsLib);
+    }
+    const base = appBaseUrl();
     return new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'vendor/pdfjs/pdf.min.js';
-      s.onload = () => {
-        const lib = window.pdfjsLib || window['pdfjs-dist/build/pdf'] || window.pdfjsDistBuildPdf;
-        if (!lib) return reject(new Error('pdf.js not loaded'));
-        window.pdfjsLib = lib;
-        lib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
-        resolve(lib);
+      s.src = base + 'vendor/pdfjs/pdf.min.js';
+      s.async = true;
+      s.onload = async () => {
+        try {
+          const lib = window.pdfjsLib;
+          if (!lib || !lib.getDocument) throw new Error('pdfjsLib missing');
+          window.pdfjsLib = lib;
+          const workerPath = base + 'vendor/pdfjs/pdf.worker.min.js';
+          try {
+            const resp = await fetch(workerPath);
+            if (!resp.ok) throw new Error('worker fetch ' + resp.status);
+            const blob = await resp.blob();
+            lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+          } catch (_) {
+            lib.GlobalWorkerOptions.workerSrc = workerPath;
+          }
+          resolve(lib);
+        } catch (e) { reject(e); }
       };
-      s.onerror = () => reject(new Error('pdf.js load failed'));
+      s.onerror = () => reject(new Error('pdf.js script failed'));
       document.head.appendChild(s);
     });
   }
@@ -257,8 +276,9 @@ let docsViewerUrl = null;
     const pdf = await pdfjsLib.getDocument({ data: data.slice() }).promise;
     container.innerHTML = '';
     container.classList.add('docs-viewer-pages');
-    const width = Math.max(280, Math.floor(container.clientWidth || window.innerWidth));
-    const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+    // fit each page to the visible viewer width
+    const width = Math.max(300, Math.floor(container.getBoundingClientRect().width || window.innerWidth));
+    const outputScale = Math.min(window.devicePixelRatio || 1, 2.5);
     for (let n = 1; n <= pdf.numPages; n++) {
       const page = await pdf.getPage(n);
       const base = page.getViewport({ scale: 1 });
@@ -268,9 +288,11 @@ let docsViewerUrl = null;
       canvas.className = 'docs-viewer-page';
       canvas.width = Math.floor(viewport.width * outputScale);
       canvas.height = Math.floor(viewport.height * outputScale);
-      canvas.style.width = '100%';
-      canvas.style.height = 'auto';
-      const ctx = canvas.getContext('2d');
+      canvas.style.width = width + 'px';
+      canvas.style.height = Math.floor(viewport.height) + 'px';
+      canvas.style.maxWidth = '100%';
+      canvas.style.display = 'block';
+      const ctx = canvas.getContext('2d', { alpha: false });
       ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
       const wrap = document.createElement('div');
       wrap.className = 'docs-viewer-page-wrap';
@@ -317,12 +339,10 @@ let docsViewerUrl = null;
       } else if (isPdf) {
         bodyEl.classList.add('docs-viewer-scroll');
         bodyEl.innerHTML = `<div class="docs-viewer-loading">Загрузка страниц…</div>`;
-        // wait a frame so clientWidth is correct
         requestAnimationFrame(() => {
           renderPdfFitWidth(bodyEl, bytes).catch((err) => {
             console.error(err);
-            bodyEl.classList.remove('docs-viewer-scroll');
-            bodyEl.innerHTML = `<iframe class="docs-viewer-frame" src="${docsViewerUrl}" title="${title}"></iframe>`;
+            bodyEl.innerHTML = `<div class="docs-viewer-fallback"><p>Не удалось показать PDF на экране.</p><a class="btn" href="${docsViewerUrl}" download="${esc((f.file||'file').split('/').pop())}">Скачать файл</a></div>`;
           });
         });
       } else {
