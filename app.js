@@ -120,7 +120,7 @@
       el.innerHTML = '<div class="warn">Фразы не загрузились. Обновите страницу с интернетом.</div>';
       return;
     }
-    el.innerHTML = '<div class="tip">Короткий разговорник EN → RU. Тап по фразе — скопировать английский.</div>' + groups.map(g => `
+    el.innerHTML = '<div class="tip">Короткий разговорник EN → RU. Тап по фразе — скопировать английский.</div>' + groups.map((g, gi) => `
       <div class="svc-group">
         <div class="cat-title">${esc(g.cat)}</div>
         <article class="card" style="padding-top:4px;padding-bottom:4px">
@@ -144,18 +144,20 @@
   }
   renderPhrases();
 
-const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
+const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v5';
   let docsUnlockedPack = null;
-
-  function docsIsUnlocked() {
-    return !!docsUnlockedPack || localStorage.getItem(DOCS_STORAGE_KEY) === '1';
-  }
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return out;
+  }
+  function bytesToB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
   }
 
   async function deriveDocsKey(password, salt, iter) {
@@ -165,45 +167,81 @@ const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
       { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
       base,
       { name: 'AES-GCM', length: 256 },
-      false,
+      true,
       ['decrypt']
     );
+  }
+
+  async function decryptVaultWithKey(key) {
+    const vault = D.docs_vault;
+    if (!vault || !vault.ct) throw new Error('Нет архива');
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: b64ToBytes(vault.iv) },
+      key,
+      b64ToBytes(vault.ct)
+    );
+    return JSON.parse(new TextDecoder().decode(plain));
   }
 
   async function unlockDocsWithPassword(password) {
     const vault = D.docs_vault;
     if (!vault || !vault.ct) throw new Error('Нет защищённого архива документов');
     const key = await deriveDocsKey(password, b64ToBytes(vault.salt), vault.iter || 200000);
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: b64ToBytes(vault.iv) },
-      key,
-      b64ToBytes(vault.ct)
-    );
-    const pack = JSON.parse(new TextDecoder().decode(plain));
+    const pack = await decryptVaultWithKey(key);
     docsUnlockedPack = pack;
+    const raw = await crypto.subtle.exportKey('raw', key);
     localStorage.setItem(DOCS_STORAGE_KEY, '1');
-    // keep decrypted pack in memory for this page session only
-    localStorage.setItem(DOCS_STORAGE_KEY + '_pack', JSON.stringify(pack));
+    localStorage.setItem(DOCS_STORAGE_KEY + '_key', bytesToB64(raw));
+    localStorage.removeItem(DOCS_STORAGE_KEY + '_pack');
+    localStorage.removeItem('e2026_docs_unlock_v4_pack');
+    localStorage.removeItem('e2026_docs_unlock_v3_pack');
+    localStorage.removeItem('e2026_docs_unlock_v2_pack');
     return pack;
+  }
+
+  async function restoreDocsFromStoredKey() {
+    if (docsUnlockedPack) return docsUnlockedPack;
+    if (localStorage.getItem(DOCS_STORAGE_KEY) !== '1') return null;
+    const keyB64 = localStorage.getItem(DOCS_STORAGE_KEY + '_key');
+    if (!keyB64) return null;
+    const key = await crypto.subtle.importKey('raw', b64ToBytes(keyB64), { name: 'AES-GCM' }, false, ['decrypt']);
+    docsUnlockedPack = await decryptVaultWithKey(key);
+    return docsUnlockedPack;
   }
 
   function lockDocs() {
     docsUnlockedPack = null;
     localStorage.removeItem(DOCS_STORAGE_KEY);
+    localStorage.removeItem(DOCS_STORAGE_KEY + '_key');
     localStorage.removeItem(DOCS_STORAGE_KEY + '_pack');
     renderDocs();
   }
 
-  function getUnlockedPack() {
-    if (docsUnlockedPack) return docsUnlockedPack;
+  function openDocFile(f) {
     try {
-      const raw = localStorage.getItem(DOCS_STORAGE_KEY + '_pack');
-      if (raw && localStorage.getItem(DOCS_STORAGE_KEY) === '1') {
-        docsUnlockedPack = JSON.parse(raw);
-        return docsUnlockedPack;
+      if (f && f.data_b64) {
+        const bin = atob(f.data_b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: f.mime || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        // iOS: hint filename
+        const name = (f.file || 'document').split('/').pop();
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        return;
       }
-    } catch (_) {}
-    return null;
+      if (f && f.file) window.open(f.file, '_blank');
+    } catch (e) {
+      alert('Не удалось открыть файл');
+    }
   }
 
   function renderDocsLocked(el, errMsg) {
@@ -240,10 +278,19 @@ const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
     if (input) setTimeout(() => input.focus(), 50);
   }
 
-  function renderDocs() {
+  async function renderDocs() {
     const el = document.getElementById('docs');
     if (!el) return;
-    const unlocked = getUnlockedPack();
+    let unlocked = docsUnlockedPack;
+    if (!unlocked && localStorage.getItem(DOCS_STORAGE_KEY) === '1') {
+      el.innerHTML = '<div class="tip">Открываем документы…</div>';
+      try {
+        unlocked = await restoreDocsFromStoredKey();
+      } catch (_) {
+        lockDocs();
+        return;
+      }
+    }
     if (!unlocked) {
       renderDocsLocked(el);
       return;
@@ -252,28 +299,27 @@ const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
     const groups = Array.isArray(pack.groups) ? pack.groups : [];
     const summary = Array.isArray(pack.summary) ? pack.summary : [];
     const priv = unlocked.documents_privacy || '';
-    const fileBtn = (f) => {
-      const href = esc(f.file);
-      const isPdf = /\.pdf$/i.test(f.file || '');
-      return `<a class="btn" href="${href}" target="_blank" rel="noopener">${isPdf ? 'Открыть PDF' : 'Открыть фото'}</a>`;
+    const fileBtn = (f, gi, fi) => {
+      const isPdf = /\.pdf$/i.test(f.file || '') || (f.mime || '').includes('pdf');
+      return `<button type="button" class="btn docs-open" data-gi="${gi}" data-fi="${fi}">${isPdf ? 'Открыть PDF' : 'Открыть фото'}</button>`;
     };
     el.innerHTML =
       `<div class="docs-toolbar"><button type="button" class="btn secondary" id="docs-lock-btn">Скрыть / заблокировать</button></div>` +
       (priv ? `<div class="tip">${esc(priv)}</div>` : '') +
       (summary.length ? `<div class="warn"><b>Покрытие поездки</b><ul style="margin:8px 0 0 18px;padding:0">${summary.map(s => `<li style="margin:4px 0">${esc(s)}</li>`).join('')}</ul></div>` : '') +
-      groups.map(g => `
+      groups.map((g, gi) => `
         <div class="svc-group">
           <h2>${esc(g.period)}</h2>
           <article class="card">
             <div class="meta">${esc(g.kind)}</div>
             <div class="notes"><b>Территория:</b> ${esc(g.territory)}<br><b>Кто:</b> ${esc(g.people)}</div>
           </article>
-          ${(g.files||[]).map(f => `
+          ${(g.files||[]).map((f, fi) => `
             <article class="card">
               <div class="meta">${esc(f.person || '')}</div>
               <h3>${esc(f.title)}</h3>
               <div class="notes">${esc(f.note || '')}</div>
-              ${fileBtn(f)}
+              ${fileBtn(f, gi, fi)}
             </article>`).join('')}
         </div>`).join('') +
       `<article class="card"><h3>Assistance Белгосстрах</h3>
@@ -283,8 +329,16 @@ const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
       </article>`;
     const lockBtn = el.querySelector('#docs-lock-btn');
     if (lockBtn) lockBtn.addEventListener('click', lockDocs);
+    el.querySelectorAll('.docs-open').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const gi = +btn.dataset.gi, fi = +btn.dataset.fi;
+        const file = (((unlocked.insurance || {}).groups || [])[gi] || {}).files?.[fi];
+        openDocFile(file);
+      });
+    });
   }
   renderDocs();
+
 
 
 

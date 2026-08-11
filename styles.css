@@ -57,3 +57,5 @@ a.link{color:#0369a1;font-weight:600;word-break:break-word}
 .docs-lock-err{margin-top:10px;color:#b91c1c;font-size:13px;font-weight:700}
 .docs-toolbar{display:flex;justify-content:flex-end;margin-bottom:8px}
 .docs-toolbar .btn{margin-top:0}
+
+button.btn{border:0;cursor:pointer;font:inherit}
