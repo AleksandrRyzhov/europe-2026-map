@@ -144,7 +144,7 @@
   }
   renderPhrases();
 
-const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v2';
+const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v3';
   let docsUnlockedPack = null;
 
   function docsIsUnlocked() {
