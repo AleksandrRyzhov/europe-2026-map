@@ -1,4 +1,4 @@
-const CACHE = 'europe2026-v21';
+const CACHE = 'europe2026-v22';
 const ASSETS = [
   './',
   './index.html',
@@ -14,6 +14,8 @@ const ASSETS = [
   './vendor/leaflet/marker-icon.png',
   './vendor/leaflet/marker-icon-2x.png',
   './vendor/leaflet/marker-shadow.png',
+  './vendor/pdfjs/pdf.min.js',
+  './vendor/pdfjs/pdf.worker.min.js',
 ];
 
 self.addEventListener('install', (e) => {

@@ -235,6 +235,51 @@ let docsViewerUrl = null;
     }
   }
 
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'vendor/pdfjs/pdf.min.js';
+      s.onload = () => {
+        const lib = window.pdfjsLib || window['pdfjs-dist/build/pdf'] || window.pdfjsDistBuildPdf;
+        if (!lib) return reject(new Error('pdf.js not loaded'));
+        window.pdfjsLib = lib;
+        lib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+        resolve(lib);
+      };
+      s.onerror = () => reject(new Error('pdf.js load failed'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function renderPdfFitWidth(container, data) {
+    const pdfjsLib = await loadPdfJs();
+    const pdf = await pdfjsLib.getDocument({ data: data.slice() }).promise;
+    container.innerHTML = '';
+    container.classList.add('docs-viewer-pages');
+    const width = Math.max(280, Math.floor(container.clientWidth || window.innerWidth));
+    const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = width / base.width;
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.className = 'docs-viewer-page';
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+      const wrap = document.createElement('div');
+      wrap.className = 'docs-viewer-page-wrap';
+      wrap.appendChild(canvas);
+      container.appendChild(wrap);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+  }
+
   function openDocFile(f) {
     try {
       if (!(f && f.data_b64)) {
@@ -251,11 +296,6 @@ let docsViewerUrl = null;
       const title = esc(f.title || (f.file || 'Документ').split('/').pop());
       const isImg = /^image\//i.test(mime);
       const isPdf = /pdf/i.test(mime) || /\.pdf$/i.test(f.file || '');
-      const body = isImg
-        ? `<img class="docs-viewer-media" src="${docsViewerUrl}" alt="${title}" />`
-        : (isPdf
-          ? `<iframe class="docs-viewer-media docs-viewer-frame" src="${docsViewerUrl}" title="${title}"></iframe>`
-          : `<div class="docs-viewer-fallback"><p>Файл готов</p><a class="btn" href="${docsViewerUrl}" download="${esc((f.file||'file').split('/').pop())}">Скачать</a></div>`);
       const ov = document.createElement('div');
       ov.id = 'docs-viewer';
       ov.className = 'docs-viewer';
@@ -264,15 +304,30 @@ let docsViewerUrl = null;
           <button type="button" class="docs-viewer-close" id="docs-viewer-close" aria-label="Закрыть">✕ Закрыть</button>
           <div class="docs-viewer-title">${title}</div>
         </div>
-        <div class="docs-viewer-body">${body}</div>`;
+        <div class="docs-viewer-body" id="docs-viewer-body"></div>`;
       document.body.appendChild(ov);
       document.body.style.overflow = 'hidden';
       docsViewerOpen = true;
       history.pushState({ docsViewer: true }, '');
       ov.querySelector('#docs-viewer-close').addEventListener('click', () => closeDocViewer(false));
-      ov.addEventListener('click', (e) => {
-        if (e.target === ov || e.target.classList.contains('docs-viewer-body')) closeDocViewer(false);
-      });
+      const bodyEl = ov.querySelector('#docs-viewer-body');
+      if (isImg) {
+        bodyEl.classList.add('docs-viewer-scroll');
+        bodyEl.innerHTML = `<img class="docs-viewer-img" src="${docsViewerUrl}" alt="${title}" />`;
+      } else if (isPdf) {
+        bodyEl.classList.add('docs-viewer-scroll');
+        bodyEl.innerHTML = `<div class="docs-viewer-loading">Загрузка страниц…</div>`;
+        // wait a frame so clientWidth is correct
+        requestAnimationFrame(() => {
+          renderPdfFitWidth(bodyEl, bytes).catch((err) => {
+            console.error(err);
+            bodyEl.classList.remove('docs-viewer-scroll');
+            bodyEl.innerHTML = `<iframe class="docs-viewer-frame" src="${docsViewerUrl}" title="${title}"></iframe>`;
+          });
+        });
+      } else {
+        bodyEl.innerHTML = `<div class="docs-viewer-fallback"><p>Файл готов</p><a class="btn" href="${docsViewerUrl}" download="${esc((f.file||'file').split('/').pop())}">Скачать</a></div>`;
+      }
     } catch (e) {
       alert('Не удалось открыть файл');
     }
