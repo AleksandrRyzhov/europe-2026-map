@@ -48,3 +48,12 @@ a.link{color:#0369a1;font-weight:600;word-break:break-word}
 .phrase-en{font-size:16px;font-weight:700;color:#0f172a;line-height:1.35}
 .phrase-ru{font-size:13px;color:#64748b;margin-top:3px}
 .cat-title{position:sticky;top:0;background:#eef2f7;padding:8px 0 6px;font-size:13px;font-weight:800;color:#0f172a;z-index:2}
+
+.docs-lock h3{margin-bottom:8px}
+.docs-lock-form{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.docs-lock-label{font-size:12px;font-weight:700;color:var(--muted,#64748b)}
+.docs-lock-input{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:11px 12px;font-size:16px;background:#fff}
+.docs-lock-input:focus{outline:2px solid rgba(37,99,235,.35);border-color:#2563eb}
+.docs-lock-err{margin-top:10px;color:#b91c1c;font-size:13px;font-weight:700}
+.docs-toolbar{display:flex;justify-content:flex-end;margin-bottom:8px}
+.docs-toolbar .btn{margin-top:0}

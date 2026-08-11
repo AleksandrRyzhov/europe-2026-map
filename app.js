@@ -144,24 +144,149 @@
   }
   renderPhrases();
 
+const DOCS_SESSION_KEY = 'e2026_docs_unlock_v1';
+  let docsUnlockedPack = null;
+
+  function docsIsUnlocked() {
+    return !!docsUnlockedPack || sessionStorage.getItem(DOCS_SESSION_KEY) === '1';
+  }
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function deriveDocsKey(password, salt, iter) {
+    const enc = new TextEncoder();
+    const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+      base,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+  }
+
+  async function unlockDocsWithPassword(password) {
+    const vault = D.docs_vault;
+    if (!vault || !vault.ct) throw new Error('Нет защищённого архива документов');
+    const key = await deriveDocsKey(password, b64ToBytes(vault.salt), vault.iter || 200000);
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: b64ToBytes(vault.iv) },
+      key,
+      b64ToBytes(vault.ct)
+    );
+    const pack = JSON.parse(new TextDecoder().decode(plain));
+    docsUnlockedPack = pack;
+    sessionStorage.setItem(DOCS_SESSION_KEY, '1');
+    // keep decrypted pack in memory for this page session only
+    sessionStorage.setItem(DOCS_SESSION_KEY + '_pack', JSON.stringify(pack));
+    return pack;
+  }
+
+  function lockDocs() {
+    docsUnlockedPack = null;
+    sessionStorage.removeItem(DOCS_SESSION_KEY);
+    sessionStorage.removeItem(DOCS_SESSION_KEY + '_pack');
+    renderDocs();
+  }
+
+  function getUnlockedPack() {
+    if (docsUnlockedPack) return docsUnlockedPack;
+    try {
+      const raw = sessionStorage.getItem(DOCS_SESSION_KEY + '_pack');
+      if (raw && sessionStorage.getItem(DOCS_SESSION_KEY) === '1') {
+        docsUnlockedPack = JSON.parse(raw);
+        return docsUnlockedPack;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function renderDocsLocked(el, errMsg) {
+    el.innerHTML = `
+      <article class="card docs-lock">
+        <h3>Документы защищены</h3>
+        <div class="notes">Страховки и сканы видны только после пароля. Остальные вкладки поездки открыты.</div>
+        <form id="docs-unlock-form" class="docs-lock-form" autocomplete="off">
+          <label class="docs-lock-label" for="docs-pass">Пароль</label>
+          <input id="docs-pass" class="docs-lock-input" type="password" inputmode="text" autocomplete="current-password" placeholder="Введите пароль" />
+          <button class="btn" type="submit">Показать документы</button>
+        </form>
+        ${errMsg ? `<div class="docs-lock-err">${esc(errMsg)}</div>` : ''}
+        <div class="tip" style="margin-top:10px">Подсказка: пароль знает только тот, кому вы его сказали. Файлы в приложении зашифрованы в данных вкладки.</div>
+      </article>`;
+    const form = el.querySelector('#docs-unlock-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = el.querySelector('#docs-pass');
+      const pass = (input && input.value) || '';
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = 'Проверка…';
+      try {
+        await unlockDocsWithPassword(pass);
+        renderDocs();
+      } catch (_) {
+        renderDocsLocked(el, 'Неверный пароль');
+        const again = el.querySelector('#docs-pass');
+        if (again) again.focus();
+      }
+    });
+    const input = el.querySelector('#docs-pass');
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+
   function renderDocs() {
     const el = document.getElementById('docs');
     if (!el) return;
-    const list = Array.isArray(D.documents) ? D.documents : [];
-    const priv = D.documents_privacy || '';
-    el.innerHTML = (priv ? `<div class="tip">${esc(priv)}</div>` : '') +
-      `<div class="warn"><b>Важно:</b> это только OC (гражданская ответственность перед третьими лицами). Каско/своё авто не покрывает. Возите PDF polisa + certyfikat offline.</div>` +
-      list.map(d => `
-        <article class="card">
-          <h3>${esc(d.title)}</h3>
-          <div class="notes">${esc(d.note)}</div>
-          <a class="btn" href="../${esc(d.file)}" target="_blank" rel="noopener">Открыть PDF</a>
-        </article>`).join('') +
-      `<article class="card"><h3>Что сверяли</h3>
-        <div class="notes">ФИО, адрес Минск, номер 5554AI8, VIN LB37622Z0SX644943, GEELY COOLRAY, бензин 1499/128kW, период 15.08–13.09.2026. Швейцария: в территорию Warta OC Graniczne входит (EOG + CH).</div>
+    const unlocked = getUnlockedPack();
+    if (!unlocked) {
+      renderDocsLocked(el);
+      return;
+    }
+    const pack = unlocked.insurance || {};
+    const groups = Array.isArray(pack.groups) ? pack.groups : [];
+    const summary = Array.isArray(pack.summary) ? pack.summary : [];
+    const priv = unlocked.documents_privacy || '';
+    const fileBtn = (f) => {
+      const href = esc(f.file);
+      const isPdf = /\.pdf$/i.test(f.file || '');
+      return `<a class="btn" href="${href}" target="_blank" rel="noopener">${isPdf ? 'Открыть PDF' : 'Открыть фото'}</a>`;
+    };
+    el.innerHTML =
+      `<div class="docs-toolbar"><button type="button" class="btn secondary" id="docs-lock-btn">Скрыть / заблокировать</button></div>` +
+      (priv ? `<div class="tip">${esc(priv)}</div>` : '') +
+      (summary.length ? `<div class="warn"><b>Покрытие поездки</b><ul style="margin:8px 0 0 18px;padding:0">${summary.map(s => `<li style="margin:4px 0">${esc(s)}</li>`).join('')}</ul></div>` : '') +
+      groups.map(g => `
+        <div class="svc-group">
+          <h2>${esc(g.period)}</h2>
+          <article class="card">
+            <div class="meta">${esc(g.kind)}</div>
+            <div class="notes"><b>Территория:</b> ${esc(g.territory)}<br><b>Кто:</b> ${esc(g.people)}</div>
+          </article>
+          ${(g.files||[]).map(f => `
+            <article class="card">
+              <div class="meta">${esc(f.person || '')}</div>
+              <h3>${esc(f.title)}</h3>
+              <div class="notes">${esc(f.note || '')}</div>
+              ${fileBtn(f)}
+            </article>`).join('')}
+        </div>`).join('') +
+      `<article class="card"><h3>Assistance Белгосстрах</h3>
+        <div class="phone"><a href="tel:+375173954890">+375 17 395 48 90</a></div>
+        <div class="phone"><a href="tel:+375447414226">+375 44 741 42 26</a> (Viber/Telegram/WhatsApp)</div>
+        <div class="notes">assistance@bgs.by · 24/7</div>
       </article>`;
+    const lockBtn = el.querySelector('#docs-lock-btn');
+    if (lockBtn) lockBtn.addEventListener('click', lockDocs);
   }
   renderDocs();
+
+
 
   const S = D.services;
   function linkBtn(url, label='Открыть'){

@@ -1,4 +1,4 @@
-const CACHE = 'europe2026-v10';
+const CACHE = 'europe2026-v14';
 const ASSETS = [
   './',
   './index.html',
