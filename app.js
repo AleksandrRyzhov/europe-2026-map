@@ -217,32 +217,71 @@ const DOCS_STORAGE_KEY = 'e2026_docs_unlock_v5';
     renderDocs();
   }
 
+let docsViewerUrl = null;
+  let docsViewerOpen = false;
+
+  function closeDocViewer(fromPopstate) {
+    const ov = document.getElementById('docs-viewer');
+    if (ov) ov.remove();
+    if (docsViewerUrl) {
+      try { URL.revokeObjectURL(docsViewerUrl); } catch (_) {}
+      docsViewerUrl = null;
+    }
+    const wasOpen = docsViewerOpen;
+    docsViewerOpen = false;
+    document.body.style.overflow = '';
+    if (wasOpen && !fromPopstate && history.state && history.state.docsViewer) {
+      history.back();
+    }
+  }
+
   function openDocFile(f) {
     try {
-      if (f && f.data_b64) {
-        const bin = atob(f.data_b64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        const blob = new Blob([bytes], { type: f.mime || 'application/octet-stream' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        // iOS: hint filename
-        const name = (f.file || 'document').split('/').pop();
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 120000);
+      if (!(f && f.data_b64)) {
+        if (f && f.file) window.open(f.file, '_blank');
         return;
       }
-      if (f && f.file) window.open(f.file, '_blank');
+      closeDocViewer(true);
+      const bin = atob(f.data_b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const mime = f.mime || 'application/octet-stream';
+      const blob = new Blob([bytes], { type: mime });
+      docsViewerUrl = URL.createObjectURL(blob);
+      const title = esc(f.title || (f.file || 'Документ').split('/').pop());
+      const isImg = /^image\//i.test(mime);
+      const isPdf = /pdf/i.test(mime) || /\.pdf$/i.test(f.file || '');
+      const body = isImg
+        ? `<img class="docs-viewer-media" src="${docsViewerUrl}" alt="${title}" />`
+        : (isPdf
+          ? `<iframe class="docs-viewer-media docs-viewer-frame" src="${docsViewerUrl}" title="${title}"></iframe>`
+          : `<div class="docs-viewer-fallback"><p>Файл готов</p><a class="btn" href="${docsViewerUrl}" download="${esc((f.file||'file').split('/').pop())}">Скачать</a></div>`);
+      const ov = document.createElement('div');
+      ov.id = 'docs-viewer';
+      ov.className = 'docs-viewer';
+      ov.innerHTML = `
+        <div class="docs-viewer-bar">
+          <button type="button" class="docs-viewer-close" id="docs-viewer-close" aria-label="Закрыть">✕ Закрыть</button>
+          <div class="docs-viewer-title">${title}</div>
+        </div>
+        <div class="docs-viewer-body">${body}</div>`;
+      document.body.appendChild(ov);
+      document.body.style.overflow = 'hidden';
+      docsViewerOpen = true;
+      history.pushState({ docsViewer: true }, '');
+      ov.querySelector('#docs-viewer-close').addEventListener('click', () => closeDocViewer(false));
+      ov.addEventListener('click', (e) => {
+        if (e.target === ov || e.target.classList.contains('docs-viewer-body')) closeDocViewer(false);
+      });
     } catch (e) {
       alert('Не удалось открыть файл');
     }
   }
+
+  window.addEventListener('popstate', () => {
+    if (docsViewerOpen) closeDocViewer(true);
+  });
+
 
   function renderDocsLocked(el, errMsg) {
     el.innerHTML = `
